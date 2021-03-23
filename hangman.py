@@ -1,6 +1,7 @@
 import requests
 import random
 import string
+import time
 import sys
 import os
 
@@ -48,10 +49,20 @@ title = """
 """
 
 
+def timed(func):
+	def inner(*args, **kwargs):
+		start = time.time()
+		out = func(*args, **kwargs)
+		stop = time.time()
+		return (out, stop - start)
+	return inner
+
+
 class Hangman:
 	def __init__(self, wins=0, losses=0, is_replay=False, *args, **kwargs):
 		if not is_replay:
 			self.print_intro()
+			self.best_time = None
 		self.guesses = []
 		self.chances = 6
 		self.wins = wins
@@ -87,9 +98,10 @@ class Hangman:
 	def print_board(self, is_replay=False):
 		alphabet = ' '.join(self.red(self.strikethrough(i)) if i in self.guesses else i for i in string.ascii_uppercase)
 		padding = 8 * (len(self.secret_word) - self.board.count('_'))
+		best = f"{self.best_time:.2f}" if self.best_time is not None else ""
 		display = f"""                  _______________,,.
                  /_____________.;;'/|
-                |"____  _______;;;]/                Wins: {self.wins}      Losses: {self.losses}
+                |"____  _______;;;]/                Wins: {self.wins}      Losses: {self.losses}      Best Time: {best} 
                 | || //'        ;
                 | ||//'         $
                 | |//'          $
@@ -144,11 +156,24 @@ class Hangman:
 		return guess.upper()
 
 	def start(self):
-		replay = self.play_round()
+		did_win, round_time = self.play_round()
+		if did_win:
+			self.best_time = round_time
+		self.refresh_board()
+		print("You won!" if did_win else f"You died... The secret word was {self.secret_word}")
+		replay = input("Would you like to play again? y/n: ").lower() in ['y', 'yes', 'yea']
 		while replay:
 			self.__init__(self.wins, self.losses, True)
-			replay = self.play_round()
+			did_win, round_time = self.play_round()
+			if self.best_time is not None and round_time < self.best_time and did_win:
+				self.best_time = round_time
+			elif self.best_time is None and did_win:
+				self.best_time = round_time
+			self.refresh_board()
+			print("You won!" if did_win else f"You died... The secret word was {self.secret_word}")
+			replay = input("Would you like to play again? y/n: ").lower() in ['y', 'yes', 'yea']
 
+	@timed
 	def play_round(self):
 		did_win = False
 		while self.chances > 0:
@@ -207,26 +232,22 @@ class Hangman:
 					self.head = self.head.replace('.', 'x', 2)
 			else:
 				self.board = self.assign_char_by_indices(self.board, guess, self.find_indices(self.secret_word, guess))
-			for i in range(self.display_size):
-				self.clear_line()
-				self.move_to_line_above()
-			self.clear_line()
-			self.print_board()
 			if self.board == self.secret_word:
-				print("YOU WON!")  # print win screen
 				self.wins += 1
 				did_win = True
+			self.refresh_board()
+			if did_win:
 				break
 		else:  # lost
-			print(f"YOU DIED... The secret word was: {self.secret_word}")  # print lose screen
 			self.losses += 1
-		# ask to replay, keep track of scores, etc.
-		replay = input("Would you like to replay? y/n: ")
-		if replay.lower() in ['y', 'yes', 'yea', 'ok']:
-			return True
-		else:
-			return False
+			self.refresh_board()
+		return did_win
 
+	def refresh_board(self):
+		for i in range(self.display_size):
+			self.clear_line()
+			self.move_to_line_above()
+		self.print_board()
 
 	@staticmethod
 	def clear_line():
@@ -258,6 +279,11 @@ class Hangman:
 
 
 if __name__ == "__main__":
-	game = Hangman()
-	game.start()
+	try:
+		game = Hangman()
+		game.start()
+	except KeyboardInterrupt:
+		print('\n\n')
+		sys.exit()
+
 
